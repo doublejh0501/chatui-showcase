@@ -72,8 +72,8 @@ const Index = () => {
                       </div>
                     </div>
                   </AccordionTrigger>
-                  <AccordionContent className="px-5 pb-4">
-                    <div className="pl-[4.5rem] pr-4">
+                  <AccordionContent className="px-5 pb-5">
+                    <div className="pl-[4.5rem] pr-4 pt-2">
                       <p className="text-foreground leading-relaxed">{action.answer}</p>
                     </div>
                   </AccordionContent>

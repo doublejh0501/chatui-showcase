@@ -1,6 +1,8 @@
 import { Home, Calculator, FileText, HelpCircle } from "lucide-react";
+import { useState } from "react";
 import ChatHeader from "@/components/ChatHeader";
 import ChatMessage from "@/components/ChatMessage";
+import UserMessage from "@/components/UserMessage";
 import ChatInput from "@/components/ChatInput";
 import {
   Accordion,
@@ -9,9 +11,48 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
+interface Message {
+  type: "user" | "ai";
+  content: string;
+  time: string;
+}
+
 const Index = () => {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      type: "ai",
+      content: "안녕하세요! 청년주택담보대출 AI 상담사입니다. 대출 한도, 금리, 필요 서류 등 궁금하신 점을 물어보세요.",
+      time: "오후 05:05"
+    }
+  ]);
+
+  const getCurrentTime = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const period = hours >= 12 ? "오후" : "오전";
+    const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+    return `${period} ${displayHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+  };
+
   const handleSend = (message: string) => {
-    console.log("Message sent:", message);
+    const currentTime = getCurrentTime();
+    
+    // Add user message
+    setMessages(prev => [...prev, {
+      type: "user",
+      content: message,
+      time: currentTime
+    }]);
+
+    // Simulate AI response after a short delay
+    setTimeout(() => {
+      setMessages(prev => [...prev, {
+        type: "ai",
+        content: "답변을 준비중입니다. 곧 응답드리겠습니다.",
+        time: getCurrentTime()
+      }]);
+    }, 500);
   };
 
   const quickActions = [
@@ -47,12 +88,26 @@ const Index = () => {
       
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-6 space-y-8">
-          <ChatMessage
-            message="안녕하세요! 청년주택담보대출 AI 상담사입니다. 대출 한도, 금리, 필요 서류 등 궁금하신 점을 물어보세요."
-            time="오후 05:05"
-          />
-
           <div className="space-y-4">
+            {messages.map((msg, index) => (
+              msg.type === "user" ? (
+                <UserMessage
+                  key={index}
+                  message={msg.content}
+                  time={msg.time}
+                />
+              ) : (
+                <ChatMessage
+                  key={index}
+                  message={msg.content}
+                  time={msg.time}
+                />
+              )
+            ))}
+          </div>
+
+          {messages.length === 1 && (
+            <div className="space-y-4">
             <h2 className="text-center text-muted-foreground font-medium">자주 묻는 질문</h2>
             <Accordion type="single" collapsible className="space-y-3">
               {quickActions.map((action, index) => (
@@ -81,6 +136,7 @@ const Index = () => {
               ))}
             </Accordion>
           </div>
+          )}
         </div>
       </main>
 

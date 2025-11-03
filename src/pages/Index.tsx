@@ -17,6 +17,22 @@ interface Message {
   time: string;
 }
 
+interface ChatApiResponse {
+  success: boolean;
+  type: string;
+  category?: string | null;
+  data: {
+    answer?: string;
+    result?: number;
+    currency?: string;
+    explanation?: string;
+    params?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -25,6 +41,7 @@ const Index = () => {
       time: "오후 05:05"
     }
   ]);
+  const [isSending, setIsSending] = useState(false);
 
   const getCurrentTime = () => {
     const now = new Date();
@@ -35,24 +52,98 @@ const Index = () => {
     return `${period} ${displayHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
   };
 
-  const handleSend = (message: string) => {
-    const currentTime = getCurrentTime();
-    
-    // Add user message
-    setMessages(prev => [...prev, {
-      type: "user",
-      content: message,
-      time: currentTime
-    }]);
+  const formatResponseMessage = (response: ChatApiResponse): string => {
+    const { data, type } = response;
 
-    // Simulate AI response after a short delay
-    setTimeout(() => {
-      setMessages(prev => [...prev, {
+    if (data?.answer) {
+      return data.answer;
+    }
+
+    if (typeof data?.result !== "undefined") {
+      const parts: string[] = [
+        `계산 결과: ${data.result}${data.currency ? ` ${data.currency}` : ""}`,
+      ];
+      if (data.explanation) {
+        parts.push(`설명: ${data.explanation}`);
+      }
+      if (data.params) {
+        parts.push(`입력값: ${JSON.stringify(data.params)}`);
+      }
+      return parts.join(" ");
+    }
+
+    return type === "informational"
+      ? "응답을 불러왔지만 표시할 수 있는 정보를 찾지 못했습니다."
+      : "계산 결과를 해석하지 못했습니다.";
+  };
+
+  const handleSend = async (message: string) => {
+    if (isSending) return;
+
+    const currentTime = getCurrentTime();
+
+    setMessages(prev => [
+      ...prev,
+      {
+        type: "user",
+        content: message,
+        time: currentTime
+      },
+      {
         type: "ai",
         content: "답변을 준비중입니다. 곧 응답드리겠습니다.",
         time: getCurrentTime()
-      }]);
-    }, 500);
+      }
+    ]);
+
+    setIsSending(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          intent: "informational",
+          category: null,
+          params: null
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`서버 응답이 올바르지 않습니다. (status: ${response.status})`);
+      }
+
+      const data: ChatApiResponse = await response.json();
+      const aiMessage = formatResponseMessage(data);
+
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          type: "ai",
+          content: aiMessage,
+          time: getCurrentTime()
+        };
+        return updated;
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          type: "ai",
+          content: errorMessage,
+          time: getCurrentTime()
+        };
+        return updated;
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const quickActions = [
@@ -140,7 +231,7 @@ const Index = () => {
         </div>
       </main>
 
-      <ChatInput onSend={handleSend} />
+      <ChatInput onSend={handleSend} isSending={isSending} />
     </div>
   );
 };

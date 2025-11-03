@@ -17,21 +17,44 @@ interface Message {
   time: string;
 }
 
+type ChatIntent = "informational" | "calculational";
+
+type ChatRole = "assistant" | "system" | "user";
+
+interface ChatMetadataMessage {
+  role: ChatRole;
+  content: string;
+}
+
+interface ChatMetadata {
+  mock: boolean;
+  generated_at: string;
+  trace_id: string;
+  messages: ChatMetadataMessage[];
+}
+
 interface ChatApiResponse {
-  success: boolean;
-  type: string;
+  success: true;
+  type: ChatIntent;
   category?: string | null;
   data: {
     answer?: string;
+    content?: string;
+    message?: string;
     result?: number;
     currency?: string;
     explanation?: string;
     params?: Record<string, unknown>;
+    sources?: string[] | null;
     [key: string]: unknown;
   };
+  metadata?: ChatMetadata | null;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
+
+const buildChatEndpoint = () =>
+  API_BASE_URL ? `${API_BASE_URL}/api/chat` : "/api/chat";
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -43,21 +66,50 @@ const Index = () => {
   ]);
   const [isSending, setIsSending] = useState(false);
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
+  const formatKoreanTimestamp = (date: Date) => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
     const period = hours >= 12 ? "오후" : "오전";
     const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
     return `${period} ${displayHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
   };
 
-  const formatResponseMessage = (response: ChatApiResponse): string => {
-    const { data, type } = response;
+  const getCurrentTime = () => formatKoreanTimestamp(new Date());
 
-    if (data?.answer) {
-      return data.answer;
+  const formatGeneratedAtTime = (isoTimestamp?: string | null) => {
+    if (!isoTimestamp) {
+      return getCurrentTime();
     }
+
+    const parsed = new Date(isoTimestamp);
+    if (Number.isNaN(parsed.getTime())) {
+      return getCurrentTime();
+    }
+
+    return formatKoreanTimestamp(parsed);
+  };
+
+  const formatResponseMessage = (response: ChatApiResponse): string => {
+    const { data, type, metadata } = response;
+    const primaries = [
+      data?.answer,
+      data?.content,
+      data?.message,
+      data?.output,
+      data?.text,
+      data?.response,
+    ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+    if (primaries.length > 0) {
+      return primaries.join("\n\n");
+    }
+
+    const assistantMessage = metadata?.messages?.find(
+      (message) => message.role === "assistant" && message.content.trim().length > 0
+    )?.content;
+    const sources =
+      Array.isArray(data?.sources) && data.sources.every((source) => typeof source === "string")
+        ? (data.sources as string[])
+        : [];
 
     if (typeof data?.result !== "undefined") {
       const parts: string[] = [
@@ -72,9 +124,28 @@ const Index = () => {
       return parts.join(" ");
     }
 
-    return type === "informational"
-      ? "응답을 불러왔지만 표시할 수 있는 정보를 찾지 못했습니다."
-      : "계산 결과를 해석하지 못했습니다.";
+    const fallbackSegments = [assistantMessage?.trim()].filter(
+      (segment): segment is string => !!segment && segment.length > 0
+    );
+    if (sources.length > 0) {
+      const serializedSources = sources
+        .map((source, index) => `${index + 1}. ${source}`)
+        .join("\n");
+      fallbackSegments.push(`참고 자료:\n${serializedSources}`);
+    }
+    if (fallbackSegments.length > 0) {
+      return fallbackSegments.join("\n\n");
+    }
+
+    if (type === "informational") {
+      return "응답을 불러왔지만 표시할 수 있는 정보를 찾지 못했습니다.";
+    }
+
+    if (type === "calculational") {
+      return "계산 결과를 해석하지 못했습니다.";
+    }
+
+    return "AI 응답을 해석하지 못했습니다.";
   };
 
   const handleSend = async (message: string) => {
@@ -99,7 +170,7 @@ const Index = () => {
     setIsSending(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await fetch(buildChatEndpoint(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,13 +187,14 @@ const Index = () => {
 
       const data: ChatApiResponse = await response.json();
       const aiMessage = formatResponseMessage(data);
+      const assistantTime = formatGeneratedAtTime(data.metadata?.generated_at);
 
       setMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
           type: "ai",
           content: aiMessage,
-          time: getCurrentTime()
+          time: assistantTime
         };
         return updated;
       });

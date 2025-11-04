@@ -2,7 +2,7 @@ import { Sparkles } from "lucide-react";
 
 const ChatHeader = () => {
   return (
-    <header className="bg-card border-b border-border p-6">
+    <header className="bg-card border-b border-border p-6 shrink-0">
       <div className="flex items-start gap-4">
         <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 p-4 shadow-lg">
           <Sparkles className="h-8 w-8 text-primary-foreground" />

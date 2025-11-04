@@ -12,13 +12,14 @@ const ChatInput = ({ onSend, isSending = false }: ChatInputProps) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isSending) {
-      await onSend(message);
+      const messageToSend = message;
       setMessage("");
+      await onSend(messageToSend);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-card border-t border-border p-4">
+    <form onSubmit={handleSubmit} className="bg-card border-t border-border p-4 shrink-0">
       <div className="flex gap-3 items-center max-w-4xl mx-auto">
         <input
           type="text"

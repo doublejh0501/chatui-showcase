@@ -111,11 +111,23 @@ const buildFollowUpSuggestions = (missing: string[]) =>
   });
 
 const Index = () => {
+  const formatKoreanTimestamp = (date: Date) => {
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const period = hours >= 12 ? "오후" : "오전";
+    const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+    return `${period} ${displayHours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")}`;
+  };
+
+  const getCurrentTime = () => formatKoreanTimestamp(new Date());
+
   const [messages, setMessages] = useState<Message[]>([
     {
       type: "ai",
       content: "안녕하세요! 청년주택담보대출 AI 상담사입니다. 대출 한도, 금리, 필요 서류 등 궁금하신 점을 물어보세요.",
-      time: "오후 05:05"
+      time: getCurrentTime()
     }
   ]);
   const [isSending, setIsSending] = useState(false);
@@ -129,16 +141,6 @@ const Index = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
-
-  const formatKoreanTimestamp = (date: Date) => {
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    const period = hours >= 12 ? "오후" : "오전";
-    const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
-    return `${period} ${displayHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
-  };
-
-  const getCurrentTime = () => formatKoreanTimestamp(new Date());
 
   const formatGeneratedAtTime = (isoTimestamp?: string | null) => {
     if (!isoTimestamp) {

@@ -56,6 +56,15 @@ interface ChatApiResponse {
     currency?: string;
     explanation?: string;
     params?: Record<string, unknown>;
+    calc_type?: string;
+    intent_resolution?: {
+      source: string;
+      slots?: Record<string, unknown>;
+      confidence?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    needs_input?: boolean;
+    missing_params?: string[];
     sources?: string[] | null;
     [key: string]: unknown;
   };
@@ -66,6 +75,40 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
 
 const buildChatEndpoint = () =>
   API_BASE_URL ? `${API_BASE_URL}/api/chat` : "/api/chat";
+
+const CALC_PARAM_LABELS: Record<string, string> = {
+  collateral_value: "담보 가치",
+  loan_amount: "대출 금액",
+  annual_income: "연소득",
+  total_debt_payment: "총 부채 상환액",
+  annual_debt_service: "연간 부채 상환액",
+  principal: "대출 원금",
+  interest_rate: "연 이자율(%)",
+  interest_rates: "이자율 목록",
+  months: "상환 개월 수",
+};
+
+const CALC_TYPE_LABELS: Record<string, string> = {
+  ltv: "담보인정비율 (LTV)",
+  dti: "총부채상환비율 (DTI)",
+  dsr: "총부채원리금상환비율 (DSR)",
+  annuity: "원리금 균등상환",
+  simple_interest: "단리 계산",
+};
+
+const buildMissingParamsText = (missing: string[]) => {
+  if (missing.length === 0) {
+    return "";
+  }
+  const labels = missing.map((param) => CALC_PARAM_LABELS[param] ?? param);
+  return `계산을 완료하려면 다음 정보를 알려 주세요: ${labels.join(", ")}`;
+};
+
+const buildFollowUpSuggestions = (missing: string[]) =>
+  missing.map((param) => {
+    const label = CALC_PARAM_LABELS[param] ?? param;
+    return `${label} 값이 어떻게 되나요?`;
+  });
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -78,8 +121,10 @@ const Index = () => {
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const followUpPrompt =
+  const defaultFollowUpPrompt =
     "내 한도 계산, 금리 비교, 서류 발급 경로까지 이어서 안내해 드릴게요. 무엇이 더 궁금하세요?";
+  const missingInputFollowUpPrompt =
+    "계산을 계속하려면 아래 정보 중 무엇을 알려주실 수 있을까요?";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -129,6 +174,9 @@ const Index = () => {
       Array.isArray(data?.sources) && data.sources.every((source) => typeof source === "string")
         ? (data.sources as string[])
         : [];
+    const missingParams = Array.isArray(data?.missing_params)
+      ? (data.missing_params as string[])
+      : [];
 
     if (typeof data?.result !== "undefined") {
       const parts: string[] = [
@@ -137,8 +185,15 @@ const Index = () => {
       if (data.explanation) {
         parts.push(`설명: ${data.explanation}`);
       }
+      if (data.calc_type) {
+        const calcLabel = CALC_TYPE_LABELS[data.calc_type] ?? data.calc_type;
+        parts.push(`계산 유형: ${calcLabel}`);
+      }
       if (data.params) {
         parts.push(`입력값: ${JSON.stringify(data.params)}`);
+      }
+      if (data.needs_input && missingParams.length > 0) {
+        parts.push(buildMissingParamsText(missingParams));
       }
       return parts.join(" ");
     }
@@ -151,6 +206,9 @@ const Index = () => {
         .map((source, index) => `${index + 1}. ${source}`)
         .join("\n");
       fallbackSegments.push(`참고 자료:\n${serializedSources}`);
+    }
+    if (!assistantMessage && data.needs_input && missingParams.length > 0) {
+      fallbackSegments.push(buildMissingParamsText(missingParams));
     }
     if (fallbackSegments.length > 0) {
       return fallbackSegments.join("\n\n");
@@ -192,12 +250,7 @@ const Index = () => {
       const response = await fetch(buildChatEndpoint(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          intent: "informational",
-          category: null,
-          params: null
-        })
+        body: JSON.stringify({ message })
       });
 
       if (!response.ok) {
@@ -207,13 +260,23 @@ const Index = () => {
       const data: ChatApiResponse = await response.json();
       const aiMessage = formatResponseMessage(data);
       const assistantTime = formatGeneratedAtTime(data.metadata?.generated_at);
+      const needsInput = Boolean(data.data?.needs_input);
+      const missingParams = Array.isArray(data.data?.missing_params)
+        ? (data.data?.missing_params as string[])
+        : [];
+      const followUps = needsInput ? buildFollowUpSuggestions(missingParams) : undefined;
 
       setMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
           type: "ai",
           content: aiMessage,
-          time: assistantTime
+          time: assistantTime,
+          followUps: followUps && followUps.length > 0 ? followUps : undefined,
+          followUpPrompt:
+            needsInput && followUps && followUps.length > 0
+              ? missingInputFollowUpPrompt
+              : undefined,
         };
         return updated;
       });
@@ -257,7 +320,7 @@ const Index = () => {
         content: action.fallbackAnswer,
         time: assistantTime,
         followUps: action.suggests,
-        followUpPrompt,
+        followUpPrompt: defaultFollowUpPrompt,
       },
     ]);
   };
